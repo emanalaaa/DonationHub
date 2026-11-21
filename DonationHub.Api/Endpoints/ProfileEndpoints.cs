@@ -1,6 +1,7 @@
 namespace DonationHub.Api.Endpoints;
 
 using System.Security.Claims;
+using DonationHub.Api.Extensions;
 using DonationHub.Application.Features.Profile.ChangePassword;
 using DonationHub.Application.Features.Profile.UpdateProfile;
 
@@ -23,9 +24,7 @@ public static class ProfileEndpoints
 
             var command = new UpdateProfileCommand(userId, request.FullName, request.PreferredLanguage);
             var result = await handler.HandleAsync(command, ct);
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
+            return result.ToHttpResult();
         });
 
         // PUT /api/v1/profile/password
@@ -39,12 +38,9 @@ public static class ProfileEndpoints
 
             var command = new ChangePasswordCommand(userId, request.CurrentPassword, request.NewPassword);
             var result = await handler.HandleAsync(command, ct);
-            return result.IsSuccess
-                ? Results.NoContent()
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
+            return result.ToHttpResult(successStatusCode: StatusCodes.Status204NoContent);
         });
 
         return group;
     }
 }
-

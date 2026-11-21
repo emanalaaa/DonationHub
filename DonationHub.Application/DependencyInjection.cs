@@ -1,13 +1,10 @@
 namespace DonationHub.Application;
 
-using DonationHub.Application.Features.Categories.Create;
-using DonationHub.Application.Features.Categories.Delete;
-using DonationHub.Application.Features.Categories.GetAll;
-using DonationHub.Application.Features.Categories.GetById;
-using DonationHub.Application.Features.Categories.Update;
+using DonationHub.Application.Common.Behaviors;
 using DonationHub.Application.Features.Profile.ChangePassword;
 using DonationHub.Application.Features.Profile.UpdateProfile;
 using DonationHub.Application.Options;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 public static class DependencyInjection
@@ -19,12 +16,15 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        // Category Vertical Slice Handlers
-        services.AddScoped<CreateCategoryHandler>();
-        services.AddScoped<UpdateCategoryHandler>();
-        services.AddScoped<DeleteCategoryHandler>();
-        services.AddScoped<GetCategoryByIdHandler>();
-        services.AddScoped<GetAllCategoriesHandler>();
+        // MediatR & Automatic Validation Pipeline Behavior
+        services.AddMediatR(cfg =>
+        {
+            cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
+            cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
+        });
+
+        // FluentValidation
+        services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
 
         // Profile Vertical Slice Handlers
         services.AddScoped<UpdateProfileHandler>();

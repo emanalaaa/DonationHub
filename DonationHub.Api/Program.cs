@@ -1,5 +1,7 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using DonationHub.Api.Endpoints;
+using DonationHub.Api.Infrastructure;
 using DonationHub.Application;
 using DonationHub.Infrastructure;
 using DonationHub.Infrastructure.Options;
@@ -10,6 +12,25 @@ using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Register TimeProvider
+builder.Services.AddSingleton(TimeProvider.System);
+
+// Register RFC 9457 ProblemDetails & Global Exception Handler
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// Register Controllers & configure JSON String Enum serialization
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 // Register Core Application & Infrastructure Layers
 builder.Services.AddApplicationServices();
@@ -66,6 +87,9 @@ builder.Services.AddOpenApi(options =>
 
 var app = builder.Build();
 
+// Early Global Exception Handling Middleware
+app.UseExceptionHandler();
+
 // Configure Middleware Pipeline
 if (app.Environment.IsDevelopment())
 {
@@ -83,6 +107,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Map Controllers
+app.MapControllers();
 
 // Map Minimal API Endpoints
 app.MapAuthEndpoints();

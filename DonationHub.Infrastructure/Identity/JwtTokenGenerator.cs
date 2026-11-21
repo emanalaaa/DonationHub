@@ -19,6 +19,8 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         _options = options.Value;
     }
 
+    public int RefreshTokenExpiryDays => _options.RefreshTokenExpiryDays;
+
     public (string Token, int ExpiresInSeconds) GenerateAccessToken(ApplicationUser user, IEnumerable<string> roles)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
@@ -70,4 +72,3 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         return Convert.ToHexString(hash);
     }
 }
-

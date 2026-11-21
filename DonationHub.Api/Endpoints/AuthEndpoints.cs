@@ -1,8 +1,13 @@
 namespace DonationHub.Api.Endpoints;
 
 using System.Security.Claims;
-using DonationHub.Application.Common.Interfaces;
-using DonationHub.Application.Features.Auth;
+using DonationHub.Api.Extensions;
+using DonationHub.Application.Features.Auth.GetCurrentUser;
+using DonationHub.Application.Features.Auth.Login;
+using DonationHub.Application.Features.Auth.Logout;
+using DonationHub.Application.Features.Auth.RefreshToken;
+using DonationHub.Application.Features.Auth.Register;
+using MediatR;
 
 public static class AuthEndpoints
 {
@@ -11,34 +16,19 @@ public static class AuthEndpoints
         var group = routes.MapGroup("/api/v1/auth")
             .WithTags("Auth");
 
-        group.MapPost("/register", async (RegisterRequest request, IIdentityService identityService, CancellationToken ct) =>
-        {
-            var result = await identityService.RegisterAsync(request, ct);
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
-        })
-        .AllowAnonymous();
+        group.MapPost("/register", async (RegisterCommand command, ISender mediator, CancellationToken ct) =>
+            (await mediator.Send(command, ct)).ToHttpResult())
+            .AllowAnonymous();
 
-        group.MapPost("/login", async (LoginRequest request, IIdentityService identityService, CancellationToken ct) =>
-        {
-            var result = await identityService.LoginAsync(request, ct);
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
-        })
-        .AllowAnonymous();
+        group.MapPost("/login", async (LoginCommand command, ISender mediator, CancellationToken ct) =>
+            (await mediator.Send(command, ct)).ToHttpResult())
+            .AllowAnonymous();
 
-        group.MapPost("/refresh", async (TokenRequest request, IIdentityService identityService, CancellationToken ct) =>
-        {
-            var result = await identityService.RefreshTokenAsync(request, ct);
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
-        })
-        .AllowAnonymous();
+        group.MapPost("/refresh", async (RefreshTokenCommand command, ISender mediator, CancellationToken ct) =>
+            (await mediator.Send(command, ct)).ToHttpResult())
+            .AllowAnonymous();
 
-        group.MapPost("/logout", async (TokenRequest request, ClaimsPrincipal principal, IIdentityService identityService, CancellationToken ct) =>
+        group.MapPost("/logout", async (TokenRequest request, ClaimsPrincipal principal, ISender mediator, CancellationToken ct) =>
         {
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId))
@@ -46,14 +36,12 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
             }
 
-            var result = await identityService.LogoutAsync(request.RefreshToken, userId, ct);
-            return result.IsSuccess
-                ? Results.NoContent()
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
+            var result = await mediator.Send(new LogoutCommand(request.RefreshToken, userId), ct);
+            return result.ToHttpResult(StatusCodes.Status204NoContent);
         })
         .RequireAuthorization();
 
-        group.MapGet("/me", async (ClaimsPrincipal principal, IIdentityService identityService, CancellationToken ct) =>
+        group.MapGet("/me", async (ClaimsPrincipal principal, ISender mediator, CancellationToken ct) =>
         {
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId))
@@ -61,10 +49,8 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
             }
 
-            var result = await identityService.GetCurrentUserAsync(userId, ct);
-            return result.IsSuccess
-                ? Results.Ok(result.Value)
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
+            var result = await mediator.Send(new GetCurrentUserQuery(userId), ct);
+            return result.ToHttpResult();
         })
         .RequireAuthorization();
 
@@ -72,3 +58,4 @@ public static class AuthEndpoints
     }
 }
 
+public record TokenRequest(string RefreshToken);

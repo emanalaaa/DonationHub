@@ -1,6 +1,8 @@
 namespace DonationHub.Domain.Entities;
 
+using DonationHub.Domain.Common.Errors;
 using DonationHub.Domain.Common.Interfaces;
+using DonationHub.Domain.Common.Results;
 using DonationHub.Domain.Enums;
 using DonationHub.Domain.Exceptions;
 using DonationHub.Domain.ValueObjects;
@@ -27,7 +29,7 @@ public class Campaign : ISoftDeletable
 
     private Campaign() { }
 
-    public static Campaign Create(
+    public static Result<Campaign> Create(
         Guid id,
         string titleAr,
         string titleEn,
@@ -42,40 +44,40 @@ public class Campaign : ISoftDeletable
     {
         if (id == Guid.Empty)
         {
-            throw new DomainException("Campaign ID cannot be empty.");
+            return Error.Validation("Campaign.IdEmpty", "Campaign ID cannot be empty.");
         }
 
         if (string.IsNullOrWhiteSpace(titleAr))
         {
-            throw new DomainException("Arabic title cannot be empty.");
+            return Error.Validation("Campaign.TitleArEmpty", "Arabic title cannot be empty.");
         }
 
         if (string.IsNullOrWhiteSpace(titleEn))
         {
-            throw new DomainException("English title cannot be empty.");
+            return Error.Validation("Campaign.TitleEnEmpty", "English title cannot be empty.");
         }
 
         if (goalAmount is null || goalAmount.Amount <= 0)
         {
-            throw new DomainException("Goal amount must be greater than zero.");
+            return Error.Validation("Campaign.GoalInvalid", "Goal amount must be greater than zero.");
         }
 
         if (endDate <= nowUtc)
         {
-            throw new DomainException("End date must be in the future relative to the current time.");
+            return CampaignErrors.EndDateInPast;
         }
 
         if (categoryId == Guid.Empty)
         {
-            throw new DomainException("CategoryId cannot be empty.");
+            return Error.Validation("Campaign.CategoryEmpty", "CategoryId cannot be empty.");
         }
 
         if (createdByUserId == Guid.Empty)
         {
-            throw new DomainException("CreatedByUserId cannot be empty.");
+            return Error.Validation("Campaign.CreatedByUserEmpty", "CreatedByUserId cannot be empty.");
         }
 
-        return new Campaign
+        var campaign = new Campaign
         {
             Id = id,
             TitleAr = titleAr.Trim(),
@@ -95,6 +97,127 @@ public class Campaign : ISoftDeletable
             DeletedAtUtc = null,
             RowVersion = []
         };
+
+        return campaign;
+    }
+
+    public Result Update(
+        string titleAr,
+        string titleEn,
+        string descriptionAr,
+        string descriptionEn,
+        Money goalAmount,
+        DateTime endDate,
+        Guid categoryId,
+        string? bannerFileName,
+        DateTime nowUtc)
+    {
+        if (Status == CampaignStatus.Completed || Status == CampaignStatus.Expired)
+        {
+            return CampaignErrors.NotActive;
+        }
+
+        if (endDate <= nowUtc)
+        {
+            return CampaignErrors.EndDateInPast;
+        }
+
+        if (string.IsNullOrWhiteSpace(titleAr))
+        {
+            return Error.Validation("Campaign.TitleArEmpty", "Arabic title cannot be empty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(titleEn))
+        {
+            return Error.Validation("Campaign.TitleEnEmpty", "English title cannot be empty.");
+        }
+
+        if (categoryId == Guid.Empty)
+        {
+            return Error.Validation("Campaign.CategoryEmpty", "CategoryId cannot be empty.");
+        }
+
+        if (goalAmount is null || goalAmount.Amount <= 0)
+        {
+            return Error.Validation("Campaign.GoalInvalid", "Goal amount must be greater than zero.");
+        }
+
+        if (goalAmount.Amount < RaisedAmount.Amount)
+        {
+            return CampaignErrors.GoalBelowRaised;
+        }
+
+        TitleAr = titleAr.Trim();
+        TitleEn = titleEn.Trim();
+        DescriptionAr = descriptionAr?.Trim() ?? string.Empty;
+        DescriptionEn = descriptionEn?.Trim() ?? string.Empty;
+        GoalAmount = goalAmount;
+        EndDate = endDate;
+        CategoryId = categoryId;
+        BannerFileName = bannerFileName?.Trim();
+        UpdatedAt = nowUtc;
+
+        return Result.Success();
+    }
+
+    public Result SoftDelete(DateTime nowUtc)
+    {
+        IsDeleted = true;
+        DeletedAtUtc = nowUtc;
+        UpdatedAt = nowUtc;
+        return Result.Success();
+    }
+
+    public Result AddDonation(Money donationAmount, DateTime nowUtc)
+    {
+        if (Status != CampaignStatus.Active)
+        {
+            return CampaignErrors.NotActive;
+        }
+
+        if (donationAmount is null || donationAmount.Amount <= 0)
+        {
+            return Error.Validation("Donation.AmountInvalid", "Donation amount must be greater than zero.");
+        }
+
+        if (!string.Equals(donationAmount.Currency, GoalAmount.Currency, StringComparison.OrdinalIgnoreCase))
+        {
+            return Error.Validation("Donation.CurrencyMismatch", $"Donation currency '{donationAmount.Currency}' does not match campaign currency '{GoalAmount.Currency}'.");
+        }
+
+        RaisedAmount = RaisedAmount.Add(donationAmount);
+        UpdatedAt = nowUtc;
+
+        if (RaisedAmount.Amount >= GoalAmount.Amount)
+        {
+            Status = CampaignStatus.Completed;
+        }
+
+        return Result.Success();
+    }
+
+    public Result MarkAsCompleted(DateTime nowUtc)
+    {
+        if (Status != CampaignStatus.Active)
+        {
+            return CampaignErrors.NotActive;
+        }
+
+        Status = CampaignStatus.Completed;
+        UpdatedAt = nowUtc;
+        return Result.Success();
+    }
+
+    public Result MarkAsExpired(DateTime nowUtc)
+    {
+        if (Status != CampaignStatus.Active)
+        {
+            return CampaignErrors.NotActive;
+        }
+
+        Status = CampaignStatus.Expired;
+        UpdatedAt = nowUtc;
+        return Result.Success();
     }
 
     public void UpdateGoalAmount(Money newGoal)
@@ -155,40 +278,6 @@ public class Campaign : ISoftDeletable
         DescriptionEn = descriptionEn?.Trim() ?? string.Empty;
         CategoryId = categoryId;
         BannerFileName = bannerFileName?.Trim();
-        UpdatedAt = nowUtc;
-    }
-
-    public void AddDonation(Money donationAmount, DateTime nowUtc)
-    {
-        EnsureNotFinalState();
-
-        if (donationAmount is null || donationAmount.Amount <= 0)
-        {
-            throw new DomainException("Donation amount must be greater than zero.");
-        }
-
-        if (!string.Equals(donationAmount.Currency, GoalAmount.Currency, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new DomainException($"Donation currency '{donationAmount.Currency}' does not match campaign currency '{GoalAmount.Currency}'.");
-        }
-
-        RaisedAmount = RaisedAmount.Add(donationAmount);
-        UpdatedAt = nowUtc;
-    }
-
-    public void MarkAsCompleted(DateTime nowUtc)
-    {
-        EnsureNotFinalState();
-
-        Status = CampaignStatus.Completed;
-        UpdatedAt = nowUtc;
-    }
-
-    public void MarkAsExpired(DateTime nowUtc)
-    {
-        EnsureNotFinalState();
-
-        Status = CampaignStatus.Expired;
         UpdatedAt = nowUtc;
     }
 

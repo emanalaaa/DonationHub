@@ -1,7 +1,7 @@
 namespace DonationHub.Application.Features.Profile.UpdateProfile;
 
 using DonationHub.Application.Common.Interfaces;
-using DonationHub.Application.Common.Models;
+using DonationHub.Domain.Common.Results;
 using DonationHub.Domain.Entities;
 using DonationHub.Domain.Exceptions;
 
@@ -22,24 +22,24 @@ public class UpdateProfileHandler
     {
         if (command.UserId == Guid.Empty)
         {
-            return Result<UserProfileDto>.Failure("Profile.InvalidUserId", "User ID is invalid.", 400);
+            return Error.Validation("Profile.InvalidUserId", "User ID is invalid.");
         }
 
         if (string.IsNullOrWhiteSpace(command.FullName))
         {
-            return Result<UserProfileDto>.Failure("Profile.FullNameRequired", "Full name is required.", 400);
+            return Error.Validation("Profile.FullNameRequired", "Full name is required.");
         }
 
         var lang = command.PreferredLanguage?.Trim().ToLowerInvariant();
         if (lang != "en" && lang != "ar")
         {
-            return Result<UserProfileDto>.Failure("Profile.InvalidLanguage", "Preferred language must be either 'en' or 'ar'.", 400);
+            return Error.Validation("Profile.InvalidLanguage", "Preferred language must be either 'en' or 'ar'.");
         }
 
         var user = await _userRepository.GetByIdAsync(command.UserId, cancellationToken);
         if (user is null)
         {
-            return Result<UserProfileDto>.Failure("Profile.UserNotFound", "User not found.", 404);
+            return Error.NotFound("Profile.UserNotFound", "User not found.");
         }
 
         try
@@ -48,7 +48,7 @@ public class UpdateProfileHandler
         }
         catch (DomainException ex)
         {
-            return Result<UserProfileDto>.Failure("Profile.DomainError", ex.Message, 400);
+            return Error.Validation("Profile.DomainError", ex.Message);
         }
 
         _userRepository.Update(user);
@@ -66,4 +66,3 @@ public class UpdateProfileHandler
         return Result<UserProfileDto>.Success(dto);
     }
 }
-

@@ -1,8 +1,8 @@
 namespace DonationHub.Application.Common.Interfaces;
 
-using DonationHub.Application.Common.Models;
 using DonationHub.Application.Features.Admin;
 using DonationHub.Application.Features.Auth;
+using DonationHub.Domain.Common.Results;
 
 public interface IIdentityService
 {
@@ -13,4 +13,3 @@ public interface IIdentityService
     Task<Result<CurrentUserResponse>> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result<Guid>> CreateStaffAsync(CreateStaffRequest request, CancellationToken cancellationToken = default);
 }
-

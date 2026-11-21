@@ -1,7 +1,7 @@
 namespace DonationHub.Application.Features.Profile.ChangePassword;
 
 using DonationHub.Application.Common.Interfaces;
-using DonationHub.Application.Common.Models;
+using DonationHub.Domain.Common.Results;
 using DonationHub.Domain.Entities;
 using DonationHub.Domain.Exceptions;
 
@@ -25,33 +25,33 @@ public class ChangePasswordHandler
     {
         if (command.UserId == Guid.Empty)
         {
-            return Result.Failure("Profile.InvalidUserId", "User ID is invalid.", 400);
+            return Error.Validation("Profile.InvalidUserId", "User ID is invalid.");
         }
 
         if (string.IsNullOrWhiteSpace(command.CurrentPassword))
         {
-            return Result.Failure("Profile.CurrentPasswordRequired", "Current password is required.", 400);
+            return Error.Validation("Profile.CurrentPasswordRequired", "Current password is required.");
         }
 
         if (string.IsNullOrWhiteSpace(command.NewPassword))
         {
-            return Result.Failure("Profile.NewPasswordRequired", "New password is required.", 400);
+            return Error.Validation("Profile.NewPasswordRequired", "New password is required.");
         }
 
         if (command.NewPassword.Length < 8)
         {
-            return Result.Failure("Profile.PasswordTooShort", "New password must be at least 8 characters long.", 400);
+            return Error.Validation("Profile.PasswordTooShort", "New password must be at least 8 characters long.");
         }
 
         var user = await _userRepository.GetByIdAsync(command.UserId, cancellationToken);
         if (user is null)
         {
-            return Result.Failure("Profile.UserNotFound", "User not found.", 404);
+            return Error.NotFound("Profile.UserNotFound", "User not found.");
         }
 
         if (!_passwordHasher.VerifyPassword(command.CurrentPassword, user.PasswordHash))
         {
-            return Result.Failure("Profile.InvalidCurrentPassword", "The current password is incorrect.", 400);
+            return Error.Validation("Profile.InvalidCurrentPassword", "The current password is incorrect.");
         }
 
         var newHash = _passwordHasher.HashPassword(command.NewPassword);
@@ -61,7 +61,7 @@ public class ChangePasswordHandler
         }
         catch (DomainException ex)
         {
-            return Result.Failure("Profile.DomainError", ex.Message, 400);
+            return Error.Validation("Profile.DomainError", ex.Message);
         }
 
         _userRepository.Update(user);
@@ -70,4 +70,3 @@ public class ChangePasswordHandler
         return Result.Success();
     }
 }
-

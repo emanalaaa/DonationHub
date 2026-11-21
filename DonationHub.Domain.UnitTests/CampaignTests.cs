@@ -1,5 +1,6 @@
 namespace DonationHub.Domain.UnitTests;
 
+using DonationHub.Domain.Common.Errors;
 using DonationHub.Domain.Entities;
 using DonationHub.Domain.Enums;
 using DonationHub.Domain.Exceptions;
@@ -24,7 +25,7 @@ public class CampaignTests
         var createdByUserId = Guid.NewGuid();
 
         // Act
-        var campaign = Campaign.Create(
+        var result = Campaign.Create(
             id,
             titleAr,
             titleEn,
@@ -37,6 +38,8 @@ public class CampaignTests
             nowUtc);
 
         // Assert
+        Assert.True(result.IsSuccess);
+        var campaign = result.Value;
         Assert.NotNull(campaign);
         Assert.Equal(id, campaign.Id);
         Assert.Equal(CampaignStatus.Active, campaign.Status);
@@ -51,7 +54,40 @@ public class CampaignTests
     }
 
     [Fact]
-    public void Create_WithNegativeOrZeroGoal_ThrowsDomainException()
+    public void Create_WithEndDateInPast_ReturnsEndDateInPastError()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var titleAr = "حملة إغاثة";
+        var titleEn = "Relief Campaign";
+        var descAr = "وصف";
+        var descEn = "Description";
+        var goalAmount = new Money(5000m, "USD");
+        var nowUtc = DateTime.UtcNow;
+        var pastEndDate = nowUtc.AddDays(-1);
+        var categoryId = Guid.NewGuid();
+        var createdByUserId = Guid.NewGuid();
+
+        // Act
+        var result = Campaign.Create(
+            id,
+            titleAr,
+            titleEn,
+            descAr,
+            descEn,
+            goalAmount,
+            pastEndDate,
+            categoryId,
+            createdByUserId,
+            nowUtc);
+
+        // Assert
+        Assert.True(result.IsFailure);
+        Assert.Equal(CampaignErrors.EndDateInPast.Code, result.Error.Code);
+    }
+
+    [Fact]
+    public void Create_WithNegativeOrZeroGoal_ReturnsValidationErrorOrThrows()
     {
         // Arrange
         var id = Guid.NewGuid();
@@ -64,22 +100,21 @@ public class CampaignTests
         var categoryId = Guid.NewGuid();
         var createdByUserId = Guid.NewGuid();
 
-        // Act & Assert 1: Zero Goal Amount
+        // Act & Assert 1: Zero Goal Amount returns validation failure
         var zeroGoal = Money.Zero("USD");
-        var exZero = Assert.Throws<DomainException>(() =>
-            Campaign.Create(
-                id,
-                titleAr,
-                titleEn,
-                descAr,
-                descEn,
-                zeroGoal,
-                endDate,
-                categoryId,
-                createdByUserId,
-                nowUtc));
+        var resultZero = Campaign.Create(
+            id,
+            titleAr,
+            titleEn,
+            descAr,
+            descEn,
+            zeroGoal,
+            endDate,
+            categoryId,
+            createdByUserId,
+            nowUtc);
 
-        Assert.Contains("greater than zero", exZero.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(resultZero.IsFailure);
 
         // Act & Assert 2: Negative Goal Amount (Throws in Money VO constructor)
         var exNegative = Assert.Throws<DomainException>(() => new Money(-1000m, "USD"));
@@ -87,11 +122,11 @@ public class CampaignTests
     }
 
     [Fact]
-    public void UpdateGoalAmount_WithAmountLessThanRaised_ThrowsDomainException()
+    public void Update_WithAmountLessThanRaised_ReturnsGoalBelowRaisedError()
     {
         // Arrange
         var nowUtc = DateTime.UtcNow;
-        var campaign = Campaign.Create(
+        var campaignResult = Campaign.Create(
             Guid.NewGuid(),
             "عنوان عربي",
             "English Title",
@@ -103,19 +138,34 @@ public class CampaignTests
             Guid.NewGuid(),
             nowUtc);
 
+        Assert.True(campaignResult.IsSuccess);
+        var campaign = campaignResult.Value;
+
         // Simulate received donations
-        campaign.AddDonation(new Money(3000m, "USD"), nowUtc.AddDays(1));
+        var addResult = campaign.AddDonation(new Money(3000m, "USD"), nowUtc.AddDays(1));
+        Assert.True(addResult.IsSuccess);
         Assert.Equal(3000m, campaign.RaisedAmount.Amount);
 
-        // Act & Assert: Attempt to reduce goal below raised amount (e.g. 2500 < 3000)
+        // Act: Attempt to reduce goal below raised amount (e.g. 2500 < 3000)
         var invalidNewGoal = new Money(2500m, "USD");
-        var ex = Assert.Throws<DomainException>(() => campaign.UpdateGoalAmount(invalidNewGoal));
+        var updateResult = campaign.Update(
+            "عنوان عربي",
+            "English Title",
+            "وصف",
+            "Description",
+            invalidNewGoal,
+            nowUtc.AddDays(30),
+            campaign.CategoryId,
+            null,
+            nowUtc.AddDays(2));
 
-        Assert.Contains("cannot be less than the current raised amount", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // Assert
+        Assert.True(updateResult.IsFailure);
+        Assert.Equal(CampaignErrors.GoalBelowRaised.Code, updateResult.Error.Code);
     }
 
     [Fact]
-    public void MarkAsCompleted_WhenCampaignIsAlreadyExpired_ThrowsDomainException()
+    public void Update_WhenCampaignIsCompleted_ReturnsNotActiveError()
     {
         // Arrange
         var nowUtc = DateTime.UtcNow;
@@ -129,15 +179,53 @@ public class CampaignTests
             nowUtc.AddDays(30),
             Guid.NewGuid(),
             Guid.NewGuid(),
-            nowUtc);
+            nowUtc).Value;
 
-        // Transition to Expired (a final state)
-        campaign.MarkAsExpired(nowUtc.AddDays(31));
-        Assert.Equal(CampaignStatus.Expired, campaign.Status);
+        // Transition to Completed
+        var completeResult = campaign.MarkAsCompleted(nowUtc.AddDays(1));
+        Assert.True(completeResult.IsSuccess);
+        Assert.Equal(CampaignStatus.Completed, campaign.Status);
 
-        // Act & Assert: Attempt to transition from Expired to Completed
-        var ex = Assert.Throws<DomainException>(() => campaign.MarkAsCompleted(nowUtc.AddDays(32)));
-        Assert.Contains("Cannot perform state transition", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // Act: Attempt to update completed campaign
+        var updateResult = campaign.Update(
+            "New Title",
+            "New Title",
+            "Desc",
+            "Desc",
+            new Money(6000m, "USD"),
+            nowUtc.AddDays(30),
+            campaign.CategoryId,
+            null,
+            nowUtc.AddDays(2));
+
+        // Assert
+        Assert.True(updateResult.IsFailure);
+        Assert.Equal(CampaignErrors.NotActive.Code, updateResult.Error.Code);
+    }
+
+    [Fact]
+    public void AddDonation_WhenGoalReached_AutomaticallyMarksAsCompleted()
+    {
+        // Arrange
+        var nowUtc = DateTime.UtcNow;
+        var campaign = Campaign.Create(
+            Guid.NewGuid(),
+            "عنوان عربي",
+            "English Title",
+            "وصف",
+            "Description",
+            new Money(1000m, "USD"),
+            nowUtc.AddDays(30),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            nowUtc).Value;
+
+        // Act
+        var donateResult = campaign.AddDonation(new Money(1000m, "USD"), nowUtc.AddDays(5));
+
+        // Assert
+        Assert.True(donateResult.IsSuccess);
+        Assert.Equal(1000m, campaign.RaisedAmount.Amount);
+        Assert.Equal(CampaignStatus.Completed, campaign.Status);
     }
 }
-

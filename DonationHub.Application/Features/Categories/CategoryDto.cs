@@ -8,4 +8,3 @@ public record CategoryDto(
     string DescriptionEn,
     DateTime CreatedAt,
     DateTime? UpdatedAt);
-

@@ -1,7 +1,8 @@
 namespace DonationHub.Api.Endpoints;
 
-using DonationHub.Application.Common.Interfaces;
-using DonationHub.Application.Features.Admin;
+using DonationHub.Api.Extensions;
+using DonationHub.Application.Features.Admin.CreateStaff;
+using MediatR;
 
 public static class AdminEndpoints
 {
@@ -11,15 +12,12 @@ public static class AdminEndpoints
             .WithTags("Admin")
             .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-        group.MapPost("/staff", async (CreateStaffRequest request, IIdentityService identityService, CancellationToken ct) =>
+        group.MapPost("/staff", async (CreateStaffCommand command, ISender mediator, CancellationToken ct) =>
         {
-            var result = await identityService.CreateStaffAsync(request, ct);
-            return result.IsSuccess
-                ? Results.Created($"/api/v1/admin/staff/{result.Value}", new { Id = result.Value })
-                : Results.Problem(statusCode: result.StatusCode, title: result.ErrorCode, detail: result.ErrorMessage);
+            var result = await mediator.Send(command, ct);
+            return result.ToHttpResult(id => Results.Created($"/api/v1/admin/staff/{id}", new { Id = id }));
         });
 
         return group;
     }
 }
-
